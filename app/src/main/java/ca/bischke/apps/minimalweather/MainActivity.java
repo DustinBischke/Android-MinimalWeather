@@ -1,8 +1,20 @@
 package ca.bischke.apps.minimalweather;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationManager;
 import android.os.AsyncTask;
+import android.os.Build;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -16,8 +28,10 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity
@@ -25,6 +39,7 @@ public class MainActivity extends AppCompatActivity
     private final String TAG = "MinimalWeather";
     private final String url = "https://api.openweathermap.org/data/2.5/weather?q=";
     private final String apiKey = "45f6bbc6afba649813f1027b77c00b4f";
+    private final int locationCode = 32;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -32,19 +47,63 @@ public class MainActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        displayWeatherData();
         setDateTime();
+    }
 
-        String city = "Edmonton";
-        String countryCode = "CA";
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults)
+    {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        JsonTask jsonTask = new JsonTask();
-        jsonTask.execute(url + city + "," + countryCode + "&appid=" + apiKey);
+        if (requestCode == locationCode && grantResults[0] == PackageManager.PERMISSION_GRANTED)
+        {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+            {
+                displayWeatherData();
+            }
+        }
+    }
 
-        TextView textCity = findViewById(R.id.textCity);
-        textCity.setText(city);
+    private void displayWeatherData()
+    {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+        {
+            LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            Location location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
 
-        TextView textCountry = findViewById(R.id.textCountry);
-        textCountry.setText(getCountryFromCode(countryCode));
+            Geocoder geocoder = new Geocoder(getApplicationContext(), Locale.getDefault());
+            try
+            {
+                List<Address> addressList = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
+
+                if (addressList != null && addressList.size() > 0)
+                {
+                    Address address = addressList.get(0);
+
+                    TextView textCity = findViewById(R.id.textCity);
+                    textCity.setText(address.getLocality());
+
+                    TextView textCountry = findViewById(R.id.textCountry);
+                    textCountry.setText(address.getCountryName());
+
+                    String encodedCity = URLEncoder.encode(address.getLocality(), "UTF-8");
+                    String countryCode = address.getCountryCode();
+
+                    JsonTask jsonTask = new JsonTask();
+                    jsonTask.execute(url + encodedCity + "," + countryCode + "&appid=" + apiKey);
+                }
+            }
+            catch (IOException e)
+            {
+                Log.e(TAG, e.getMessage());
+            }
+        }
+        else
+        {
+            // Request Permissions
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, locationCode);
+        }
     }
 
     // TODO DateTime of displayed city
@@ -62,12 +121,6 @@ public class MainActivity extends AppCompatActivity
 
         textDate.setText(date);
         textTime.setText(time);
-    }
-
-    private String getCountryFromCode(String countryCode)
-    {
-        Locale locale = new Locale("", countryCode);
-        return locale.getDisplayCountry();
     }
 
     private int kelvinToCelsius(double kelvin)
